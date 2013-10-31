@@ -27,11 +27,11 @@ my $server = "beta.musicbrainz.org";
 my $db = "musicbrainz_db_slave";
 my $protocol = 'https://';
 # For testing
-$server = "ianmcorvidae.mbsandbox.org";
-$db = "musicbrainz_db_static";
-$protocol = 'http://';
+#$server = "ianmcorvidae.mbsandbox.org";
+#$db = "musicbrainz_db_static";
+#$protocol = 'http://';
 my $verbose = 1;
-my $max = 10;
+my $max = 1000;
 my $dryrun = 0;
 
 my $geonameslt = 713;
@@ -58,7 +58,7 @@ WITH normalized_alt AS
      WHERE link.link_type = ?)
 SELECT url, normalized_alt.geonameid, area.gid as area, existing_geonames.relationship AS relationship, existing_geonames.geonameid AS old_geoname
 FROM musicbrainz.url join normalized_alt on url.url = normalized_alt.alternatename join l_area_url on l_area_url.entity1 = url.id left join existing_geonames ON l_area_url.entity0 = existing_geonames.area JOIN area on l_area_url.entity0 = area.id
-WHERE existing_geonames.geonameid IS DISTINCT FROM normalized_alt.geonameid ORDER BY existing_geonames.geonameid NULLS FIRST LIMIT $max
+WHERE existing_geonames.geonameid IS DISTINCT FROM normalized_alt.geonameid ORDER BY existing_geonames.geonameid NULLS FIRST, area.type DESC LIMIT $max
 ";
 
 my $sthc = $dbh->prepare($query) or die $dbh->errstr;
