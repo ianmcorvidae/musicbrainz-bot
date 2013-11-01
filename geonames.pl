@@ -49,16 +49,16 @@ my $geonames_urls = {};
 
 my $query = "
 WITH normalized_alt AS
-    (SELECT alternatenameid, geonameid, (CASE WHEN alternatename ~ '%[0-9A-F][0-9A-F]' THEN uri_decode_encode(alternatename) ELSE alternatename END) as alternatename
-     FROM geonames.alternatename
-     WHERE isolanguage = 'link' AND alternatename ~ 'wikipedia.org'),
+    (SELECT alternatenameid, alternatename.geonameid, (CASE WHEN alternatename ~ '%[0-9A-F][0-9A-F]' THEN uri_decode_encode(alternatename) ELSE alternatename END) as alternatename
+     FROM geonames.alternatename JOIN geonames.geoname ON alternatename.geonameid = geoname.geonameid
+     WHERE isolanguage = 'link' AND alternatename ~ 'wikipedia.org' AND geoname.fclass = any(ARRAY['A', 'P'])),
      existing_geonames AS
     (SELECT regexp_replace(url, 'http://sws.geonames.org/([0-9]+)/', E'\\\\1')::integer AS geonameid, l_area_url.entity0 AS area, l_area_url.id AS relationship
      FROM url JOIN l_area_url ON l_area_url.entity1 = url.id JOIN link ON l_area_url.link = link.id
      WHERE link.link_type = ?)
 SELECT url, normalized_alt.geonameid, area.gid as area, existing_geonames.relationship AS relationship, existing_geonames.geonameid AS old_geoname
 FROM musicbrainz.url join normalized_alt on url.url = normalized_alt.alternatename join l_area_url on l_area_url.entity1 = url.id left join existing_geonames ON l_area_url.entity0 = existing_geonames.area JOIN area on l_area_url.entity0 = area.id
-WHERE existing_geonames.geonameid IS DISTINCT FROM normalized_alt.geonameid ORDER BY existing_geonames.geonameid NULLS FIRST, area.type DESC LIMIT $max
+WHERE existing_geonames.geonameid IS DISTINCT FROM normalized_alt.geonameid AND area.type = any(ARRAY[1,2]) ORDER BY existing_geonames.geonameid NULLS FIRST, area.type ASC LIMIT $max
 ";
 
 my $sthc = $dbh->prepare($query) or die $dbh->errstr;
@@ -75,7 +75,7 @@ for my $area (keys %$geonames_urls) {
         my $url = $item->{via};
         my $change_from = $item->{change_from};
         my $change_link = $item->{change_link};
-        if (!defined $change_from) {
+        #if (!defined $change_from) {
             print STDERR "Adding geonames id $geoname to area $area via shared url $url.\n";
             my $rv = $bot->add_url_relationship($area, "area", {
                 'link_type_id' => $geonameslt,
@@ -83,8 +83,8 @@ for my $area (keys %$geonames_urls) {
                 "as_auto_editor" => 1,
                 edit_note => "Connected to geonames via shared wikipedia URL $url."
             });
-        } else {
-            print STDERR "Changing geonames id $change_from to $geoname, linked to area $area. UNIMPLEMENTED.\n";
-        }
+        #} else {
+        #    print STDERR "Changing geonames id $change_from to $geoname, linked to area $area. UNIMPLEMENTED.\n";
+        #}
     }
 }
