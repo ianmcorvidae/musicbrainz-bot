@@ -53,19 +53,19 @@ WITH normalized_alt AS
      FROM geonames.alternatename JOIN geonames.geoname ON alternatename.geonameid = geoname.geonameid
      WHERE isolanguage = 'link' AND alternatename ~ 'wikipedia.org' AND geoname.fclass = any(ARRAY['A', 'P'])),
      existing_geonames AS
-    (SELECT regexp_replace(url, 'http://sws.geonames.org/([0-9]+)/', E'\\\\1')::integer AS geonameid, l_area_url.entity0 AS area, l_area_url.id AS relationship
+    (SELECT array_agg(regexp_replace(url, 'http://sws.geonames.org/([0-9]+)/', E'\\\\1')::integer) AS geonameids, l_area_url.entity0 AS area
      FROM url JOIN l_area_url ON l_area_url.entity1 = url.id JOIN link ON l_area_url.link = link.id
-     WHERE link.link_type = ?)
-SELECT url, normalized_alt.geonameid, area.gid as area, existing_geonames.relationship AS relationship, existing_geonames.geonameid AS old_geoname
+     WHERE link.link_type = ? GROUP BY l_area_url.entity0)
+SELECT url, normalized_alt.geonameid, area.gid as area, existing_geonames.geonameids AS old_geonames
 FROM musicbrainz.url join normalized_alt on url.url = normalized_alt.alternatename join l_area_url on l_area_url.entity1 = url.id left join existing_geonames ON l_area_url.entity0 = existing_geonames.area JOIN area on l_area_url.entity0 = area.id
-WHERE existing_geonames.geonameid IS DISTINCT FROM normalized_alt.geonameid AND area.type = any(ARRAY[1,2]) ORDER BY existing_geonames.geonameid NULLS FIRST, area.type ASC LIMIT $max
+WHERE (normalized_alt.geonameid != all(existing_geonames.geonameids) OR existing_geonames.geonameids IS NULL) AND area.type = any(ARRAY[1,2,3]) ORDER BY existing_geonames.geonameids NULLS FIRST, area.type ASC LIMIT $max
 ";
 
 my $sthc = $dbh->prepare($query) or die $dbh->errstr;
 $sthc->execute($geonameslt);
-while (my ($url, $geoname, $area, $relationship, $old_geoname) = $sthc->fetchrow()) {
+while (my ($url, $geoname, $area, $old_geonames) = $sthc->fetchrow()) {
     $geonames_urls->{$area} ||= [];
-    push @{ $geonames_urls->{$area} }, {geoname => $geoname, via => $url, change_from => $old_geoname, change_link => $relationship};
+    push @{ $geonames_urls->{$area} }, {geoname => $geoname, via => $url, change_from => $old_geonames};
 }
 
 my $bot = MusicBrainzBot->new({ username => $username, password => $password, server => $server, verbose => $verbose, protocol => $protocol });
@@ -73,10 +73,9 @@ for my $area (keys %$geonames_urls) {
     for my $item (@{ $geonames_urls->{$area} }) {
         my $geoname = $item->{geoname};
         my $url = $item->{via};
-        my $change_from = $item->{change_from};
-        my $change_link = $item->{change_link};
+        my @change_from = @{ $item->{change_from} // [] };
         #if (!defined $change_from) {
-            print STDERR "Adding geonames id $geoname to area $area via shared url $url.\n";
+            print STDERR "Adding geonames id $geoname to area $area via shared url $url. (previously: @change_from)\n";
             my $rv = $bot->add_url_relationship($area, "area", {
                 'link_type_id' => $geonameslt,
                 url => "http://sws.geonames.org/$geoname/",
