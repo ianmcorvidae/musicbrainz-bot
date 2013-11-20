@@ -31,7 +31,7 @@ my $protocol = 'https://';
 #$db = "musicbrainz_db_static";
 #$protocol = 'http://';
 my $verbose = 1;
-my $max = 1000;
+my $max = 10000;
 my $dryrun = 0;
 
 my $geonameslt = 713;
@@ -57,8 +57,13 @@ WITH normalized_alt AS
      FROM url JOIN l_area_url ON l_area_url.entity1 = url.id JOIN link ON l_area_url.link = link.id
      WHERE link.link_type = ? GROUP BY l_area_url.entity0)
 SELECT url, normalized_alt.geonameid, area.gid as area, existing_geonames.geonameids AS old_geonames
-FROM musicbrainz.url join normalized_alt on url.url = normalized_alt.alternatename join l_area_url on l_area_url.entity1 = url.id left join existing_geonames ON l_area_url.entity0 = existing_geonames.area JOIN area on l_area_url.entity0 = area.id
-WHERE (normalized_alt.geonameid != all(existing_geonames.geonameids) OR existing_geonames.geonameids IS NULL) AND area.type = any(ARRAY[1,2,3]) ORDER BY existing_geonames.geonameids NULLS FIRST, area.type ASC LIMIT $max
+FROM musicbrainz.url
+join normalized_alt on url.url = normalized_alt.alternatename
+join l_area_url on l_area_url.entity1 = url.id left
+join existing_geonames ON l_area_url.entity0 = existing_geonames.area JOIN area on l_area_url.entity0 = area.id
+WHERE (normalized_alt.geonameid != all(existing_geonames.geonameids) OR existing_geonames.geonameids IS NULL)
+AND NOT EXISTS (SELECT TRUE FROM existing_geonames eg2 WHERE normalized_alt.geonameid = any(existing_geonames.geonameids))
+ORDER BY existing_geonames.geonameids NULLS FIRST, area.type ASC LIMIT $max
 ";
 
 my $sthc = $dbh->prepare($query) or die $dbh->errstr;
